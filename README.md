@@ -88,6 +88,19 @@ func main() {
 
 可直接运行的示例见 [example/README.md](example/README.md)：使用 Docker Compose 启动三个独立 Redis 节点，演示单节点锁、自动续期、Redlock、争用与取消。
 
+## 调试日志
+
+库直接使用标准库 `slog.Debug` 记录获取、争用重试、续期、释放、失败清理和 Redlock 节点结果，不输出 token 字段。默认日志级别不会显示 DEBUG；在应用入口开启即可，无需修改锁的构造参数：
+
+```go
+// 导入 "log/slog" 和 "os"。
+slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+})))
+```
+
+日志包含 key、操作结果、错误，以及相关的 TTL、耗时或节点编号。Handler 同步执行，应避免阻塞，以免消耗租约有效期。可运行的 `example` 已默认开启 DEBUG。
+
 ## 行为约定
 
 | 项目 | 行为 |

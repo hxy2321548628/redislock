@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"time"
 )
@@ -70,6 +71,9 @@ func (r *Lock) TryAcquire(ctx context.Context) (*Lease, error) {
 	token := cryptorand.Text()
 	start := time.Now()
 	acquired, err := r.backend.TryAcquire(ctx, r.key, token, r.opts.ttl)
+	// 在有效期校验前记录响应，日志耗时也会被计入本次获取耗时。
+	slog.Debug("redislock: 后端获取结果", "key", r.key, "acquired", acquired,
+		"ttl", r.opts.ttl, "elapsed", time.Since(start), "error", err)
 	if err != nil {
 		return nil, r.acquireError(err, token)
 	}
@@ -102,6 +106,7 @@ func (r *Lock) TryAcquire(ctx context.Context) (*Lease, error) {
 
 // acquireError 清理本次 token，并同时保留获取失败与清理失败的错误链。
 func (r *Lock) acquireError(cause error, token string) error {
+	slog.Debug("redislock: 获取失败，开始清理", "key", r.key, "error", cause)
 	if err := r.cleanup(token); err != nil {
 		return errors.Join(cause, fmt.Errorf("redislock: clean up acquisition: %w", err))
 	}
@@ -114,6 +119,7 @@ func (r *Lock) cleanup(token string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	_, err := r.backend.Release(ctx, r.key, token)
+	slog.Debug("redislock: 获取失败清理完成", "key", r.key, "error", err)
 	return err
 }
 
@@ -133,10 +139,12 @@ func (r *Lock) Acquire(ctx context.Context) (*Lease, error) {
 
 		// 随机抖动分散争用请求，避免多个客户端按固定周期一起冲击 Redis。
 		delay := r.opts.retryInterval/2 + time.Duration(rand.Int64N(int64(r.opts.retryInterval-r.opts.retryInterval/2)))
+		slog.Debug("redislock: 锁被占用，等待重试", "key", r.key, "delay", delay)
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
+			slog.Debug("redislock: 等待获取已取消", "key", r.key, "error", ctx.Err())
 			return nil, ctx.Err()
 		case <-timer.C:
 		}

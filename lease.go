@@ -3,6 +3,7 @@ package redislock
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -66,6 +67,7 @@ func (l *Lease) Release(ctx context.Context) error {
 	}
 	// 获得门后才读写释放状态；等待过程中 ctx 可能已取消，所以上面再次检查。
 	if l.released {
+		slog.Debug("redislock: 返回已缓存的释放结果", "key", l.key, "error", l.releaseErr)
 		return l.releaseErr
 	}
 	// 先停止续期，再释放。即便在途续期与释放交错，后端也必须保证 Refresh 不重建 key。
@@ -73,6 +75,7 @@ func (l *Lease) Release(ctx context.Context) error {
 	released, err := l.backend.Release(ctx, l.key, l.token)
 	if err != nil {
 		l.finish(err)
+		slog.Debug("redislock: 释放失败", "key", l.key, "error", err)
 		return err
 	}
 	l.released = true
@@ -80,6 +83,7 @@ func (l *Lease) Release(ctx context.Context) error {
 		l.releaseErr = ErrNotOwner
 	}
 	l.finish(l.releaseErr)
+	slog.Debug("redislock: 释放完成", "key", l.key, "released", released, "error", l.releaseErr)
 	return l.releaseErr
 }
 
@@ -120,6 +124,8 @@ func (l *Lease) run(ctx context.Context, autoRenew bool) {
 		renewCtx, cancel := context.WithDeadline(ctx, renewDeadline)
 		ok, err := l.backend.Refresh(renewCtx, l.key, l.token, l.ttl)
 		cancel()
+		slog.Debug("redislock: 续期结果", "key", l.key, "refreshed", ok,
+			"ttl", l.ttl, "elapsed", time.Since(start), "error", err)
 		// 主动释放导致的续期取消不是续期故障；终止结果由释放或到期来确定。
 		if ctx.Err() != nil {
 			l.waitForExpiry(deadline)
@@ -163,5 +169,6 @@ func (l *Lease) finish(err error) {
 		l.err = err
 		l.mu.Unlock()
 		close(l.done)
+		slog.Debug("redislock: 租约终止", "key", l.key, "error", err)
 	})
 }

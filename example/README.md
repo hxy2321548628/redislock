@@ -2,6 +2,20 @@
 
 需要 Go 1.25+、Docker 和 Docker Compose。以下命令均在仓库根目录执行。
 Go 示例在宿主机运行，Redis 通过 Docker 启动。
+示例默认开启 `slog` DEBUG 日志，可以观察获取、续期、释放和各 Redlock 节点的结果；将 `main.go` 中的 `slog.LevelDebug` 改为 `slog.LevelInfo` 即可隐藏库的调试日志。
+
+日志第一行显示源码位置，第二行缩进四个空格，依次显示时间、PID、级别、消息和业务字段。省略头部的 `time=`、`pid=`、`level=`、`msg=`；业务字段保留 `名称=值`：
+
+```text
+/path/to/redislock/example/main.go:71
+    2026/09/26 15:41:09 [540574] INFO  示例配置 mode=renew, key=example:locks:job, ttl=3s, hold=5s
+/path/to/redislock/example/main.go:108
+    2026/09/26 15:41:14 [540574] INFO  租约已释放
+```
+
+源码位置来自 `slog.Record.PC`，指向实际调用 `slog.Info/Debug` 的文件和行号，而非日志格式化函数。通常输出完整的 `文件路径:行号`，支持该格式的 IDE 终端可点击跳转；是否需要 Ctrl/Cmd 等修饰键取决于终端。使用 `-trimpath` 构建时，源码位置可能为模块路径。
+
+业务字段按日志调用时的顺序排列，空错误值省略。终端格式实现在 `logging.go` 中，库的日志调用不受影响。
 
 ## 1. 启动三个 Redis 节点
 

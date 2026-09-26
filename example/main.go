@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -23,14 +23,15 @@ func main() {
 	key := flag.String("key", "example:locks:job", "完整的锁 key；多个进程使用同一 key 才会相互争用")
 	hold := flag.Duration("hold", 5*time.Second, "模拟业务耗时，例如 5s；业务同时响应租约丢失和 Ctrl+C")
 	flag.Parse()
-	log.SetPrefix(fmt.Sprintf("[pid=%d] ", os.Getpid()))
+	// 在应用入口开启 DEBUG，库中直接使用 slog.Debug 输出调试信息。
+	slog.SetDefault(slog.New(newConsoleHandler(os.Stderr, slog.LevelDebug)))
 
 	// 业务取消和租约释放使用不同的 context，Ctrl+C 后仍可以尝试清理锁。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := run(ctx, *mode, *addr, *addrs, *key, *hold)
 	stop()
 	if err != nil {
-		log.Print(err)
+		slog.Error("示例执行失败", "error", err)
 		os.Exit(1) // run 的 defer 已执行，连接池和租约不会因直接退出而跳过清理。
 	}
 }
@@ -65,8 +66,8 @@ func run(ctx context.Context, mode, addr, addrs, key string, hold time.Duration)
 	if mode == "renew" {
 		ttl = 3 * time.Second // 默认业务耗时 5 秒，超过初始 TTL，用于展示自动续期。
 	}
-	log.Printf("模式=%s，key=%s，TTL=%s，业务耗时=%s", mode, key, ttl, hold)
-	log.Print("尝试获取锁：争用时最多等待 10 秒")
+	slog.Info("示例配置", "mode", mode, "key", key, "ttl", ttl, "hold", hold)
+	slog.Info("尝试获取锁：争用时最多等待 10 秒")
 	acquireCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var lease *redislock.Lease
@@ -102,10 +103,10 @@ func run(ctx context.Context, mode, addr, addrs, key string, hold time.Duration)
 			runErr = errors.Join(runErr, fmt.Errorf("释放结果未确认成功: %w", err))
 			return
 		}
-		log.Print("租约已释放")
+		slog.Info("租约已释放")
 	}()
 
-	log.Print("获取成功，开始业务；按 Ctrl+C 可取消")
+	slog.Info("获取成功，开始业务；按 Ctrl+C 可取消")
 	timer := time.NewTimer(hold)
 	defer timer.Stop()
 	// 用定时器模拟可取消的业务。实际业务同样必须响应取消和租约丢失；
@@ -116,7 +117,7 @@ func run(ctx context.Context, mode, addr, addrs, key string, hold time.Duration)
 	case <-lease.Done():
 		return fmt.Errorf("租约提前终止，停止业务: %w", lease.Err())
 	case <-timer.C:
-		log.Print("业务完成")
+		slog.Info("业务完成")
 		return nil
 	}
 }

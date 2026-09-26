@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -66,7 +67,7 @@ type quorumBackend struct {
 }
 
 func (r *quorumBackend) TryAcquire(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
-	successes, acquireErr := r.doOnNodes(ctx, "acquire", func(ctx context.Context, backend Backend) (bool, error) {
+	successes, acquireErr := r.doOnNodes(ctx, key, "acquire", func(ctx context.Context, backend Backend) (bool, error) {
 		return backend.TryAcquire(ctx, key, token, ttl)
 	})
 
@@ -86,7 +87,7 @@ func (r *quorumBackend) TryAcquire(ctx context.Context, key, token string, ttl t
 }
 
 func (r *quorumBackend) Release(ctx context.Context, key, token string) (bool, error) {
-	released, releaseErr := r.doOnNodes(ctx, "release", func(ctx context.Context, backend Backend) (bool, error) {
+	released, releaseErr := r.doOnNodes(ctx, key, "release", func(ctx context.Context, backend Backend) (bool, error) {
 		return backend.Release(ctx, key, token)
 	})
 	// 释放采用严格报告：即使多数已删除，仍返回少数节点的错误，让调用者知道有残留风险。
@@ -106,7 +107,7 @@ func (r *quorumBackend) quorum() int {
 // doOnNodes 并发执行并等待所有节点完成，不能一达到多数就直接返回：
 // 尚未完成的获取请求可能在失败清理后，甚至在调用者释放后，才写入 key。
 // 超时依赖 Backend 及时响应 context；本函数不会强行终止不合作的后端。
-func (r *quorumBackend) doOnNodes(ctx context.Context, operation string, call func(context.Context, Backend) (bool, error)) (int, error) {
+func (r *quorumBackend) doOnNodes(ctx context.Context, key, operation string, call func(context.Context, Backend) (bool, error)) (int, error) {
 	type result struct {
 		ok  bool
 		err error
@@ -128,11 +129,15 @@ func (r *quorumBackend) doOnNodes(ctx context.Context, operation string, call fu
 	successes := 0
 	var err error
 	for i, result := range results {
+		slog.Debug("redislock: 节点操作结果", "key", key, "operation", operation,
+			"node", i, "success", result.ok, "error", result.err)
 		if result.err != nil {
 			err = errors.Join(err, fmt.Errorf("redislock: %s node %d: %w", operation, i, result.err))
 		} else if result.ok {
 			successes++
 		}
 	}
+	slog.Debug("redislock: 多数派操作汇总", "key", key, "operation", operation,
+		"successes", successes, "quorum", r.quorum(), "error", err)
 	return successes, err
 }
