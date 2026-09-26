@@ -3,14 +3,15 @@
 基于 Redis 的 Go 租约锁工具库，支持单节点锁、可选自动续期和多节点 Redlock。
 要求 Go 1.25 或更高版本；内置驱动为 Redigo，也可实现 `Backend` 接入其他 Redis 驱动。
 
-当前 API 尚未发布稳定版本。采用 [MIT 许可证](LICENSE)。
+当前版本为 v0.1.0，API 尚未稳定，后续版本可能包含不兼容变更。采用 [MIT 许可证](LICENSE)。
+版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 安装
 
-上传仓库后可通过以下命令安装：
+安装 v0.1.0：
 
 ```sh
-go get github.com/hxy2321548628/redislock
+go get github.com/hxy2321548628/redislock@v0.1.0
 ```
 
 ## 使用
