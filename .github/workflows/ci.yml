@@ -1,0 +1,48 @@
+name: Go
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.25.x', 'stable']
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis2:
+        image: redis:7
+        ports: ['6380:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis3:
+        image: redis:7
+        ports: ['6381:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - name: Unit and Redis integration tests
+        env:
+          REDIS_ADDR: 127.0.0.1:6379
+          REDIS_ADDRS: 127.0.0.1:6379,127.0.0.1:6380,127.0.0.1:6381
+        run: go test -race -timeout 60s -coverprofile=coverage.out ./...
