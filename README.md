@@ -86,6 +86,8 @@ func main() {
 
 完整的外部包示例见 [example_test.go](example_test.go)。示例需要 Redis；普通 `go test` 编译示例而不执行网络操作。
 
+可直接运行的示例见 [example/README.md](example/README.md)：使用 Docker Compose 启动三个独立 Redis 节点，演示单节点锁、自动续期、Redlock、争用与取消。
+
 ## 行为约定
 
 | 项目 | 行为 |
